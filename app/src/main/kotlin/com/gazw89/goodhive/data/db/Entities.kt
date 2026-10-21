@@ -149,3 +149,21 @@ data class ScheduleSnapshotEntity(
     val fromMs: Long,
     val scheduleJson: String,
 )
+
+/**
+ * One Beekeeper write (`POST`), sanitised before insert. Polls and login calls are not stored.
+ * [path] is the path and query only. [responseCode] and [error] are null when the other applies:
+ * a transport failure has no code; a completed HTTP call has no [error].
+ */
+@Entity(tableName = "hive_request_log", indices = [Index(value = ["startedAtEpochMillis"])])
+data class HiveRequestLogEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val startedAtEpochMillis: Long,
+    val method: String,
+    val path: String,
+    val requestBody: String,
+    val responseCode: Int?,
+    val durationMs: Long,
+    val responseBody: String,
+    val error: String?,
+)

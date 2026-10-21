@@ -35,6 +35,9 @@ import com.gazw89.goodhive.ui.detail.DeviceDetailScreen
 import com.gazw89.goodhive.ui.login.LoginScreen
 import com.gazw89.goodhive.ui.schedule.ScheduleScreen
 import com.gazw89.goodhive.ui.settings.AboutScreen
+import com.gazw89.goodhive.ui.settings.HiveWriteDetailScreen
+import com.gazw89.goodhive.ui.settings.HiveWriteDetailViewModel
+import com.gazw89.goodhive.ui.settings.HiveWriteLogScreen
 import com.gazw89.goodhive.ui.settings.SettingsScreen
 import com.gazw89.goodhive.ui.theme.GoodHiveMotion
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -48,6 +51,9 @@ private object Routes {
     fun roomReport(zoneId: String, kind: ReportPeriodKind, offset: Int) = "report/${Uri.encode(zoneId)}/${kind.name}/$offset"
     const val SETTINGS = "settings"
     const val ABOUT = "about"
+    const val HIVE_WRITES = "settings/hive-writes"
+    const val HIVE_WRITE = "settings/hive-writes/{writeId}"
+    fun hiveWrite(id: Long) = "settings/hive-writes/$id"
     const val DEVICE_DETAIL = "device/{zoneId}"
     const val SCHEDULE = "schedule/{zoneId}"
     fun deviceDetail(zoneId: String) = "device/${Uri.encode(zoneId)}"
@@ -152,6 +158,7 @@ fun GoodHiveNavHost(
             SettingsScreen(
                 onBack = { navController.popBackStack() },
                 onOpenAbout = { navController.navigate(Routes.ABOUT) },
+                onOpenHiveWrites = { navController.navigate(Routes.HIVE_WRITES) },
                 onSignedOut = {
                     navController.navigate(Routes.LOGIN) {
                         popUpTo(0) { inclusive = true }
@@ -161,6 +168,18 @@ fun GoodHiveNavHost(
         }
         composable(Routes.ABOUT) {
             AboutScreen(onBack = { navController.popBackStack() })
+        }
+        composable(Routes.HIVE_WRITES) {
+            HiveWriteLogScreen(
+                onBack = { navController.popBackStack() },
+                onOpenWrite = { id -> navController.navigate(Routes.hiveWrite(id)) },
+            )
+        }
+        composable(
+            Routes.HIVE_WRITE,
+            arguments = listOf(navArgument(HiveWriteDetailViewModel.WRITE_ID) { type = NavType.LongType }),
+        ) {
+            HiveWriteDetailScreen(onBack = { navController.popBackStack() })
         }
         composable(
             Routes.DEVICE_DETAIL,

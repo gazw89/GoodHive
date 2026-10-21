@@ -249,3 +249,21 @@ interface ZoneStateDao {
         deleteAllSchedules()
     }
 }
+
+@Dao
+interface HiveRequestLogDao {
+    @Query("SELECT * FROM hive_request_log ORDER BY startedAtEpochMillis DESC")
+    fun observeAll(): Flow<List<HiveRequestLogEntity>>
+
+    @Query("SELECT * FROM hive_request_log WHERE id = :id")
+    fun observeById(id: Long): Flow<HiveRequestLogEntity?>
+
+    @Insert
+    suspend fun insert(entry: HiveRequestLogEntity)
+
+    @Query("DELETE FROM hive_request_log WHERE startedAtEpochMillis < :cutoffEpochMillis")
+    suspend fun deleteOlderThan(cutoffEpochMillis: Long)
+
+    @Query("DELETE FROM hive_request_log")
+    suspend fun deleteAll()
+}

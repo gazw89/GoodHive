@@ -27,7 +27,8 @@ class PendingUiTest : RepositoryTestBase() {
     @Before fun setMainDispatcher() { Dispatchers.setMain(dispatcher) }
     @After fun clearViewModels() { store.clear(); Dispatchers.resetMain() }
     private fun <T : ViewModel> keep(vm: T): T = vm.also { store.put(it.javaClass.name, it) }
-    private fun executor(scope: CoroutineScope) = CommandExecutor(pending, zones, repository, json, scope)
+    private fun TestScope.executor(scope: CoroutineScope = this) =
+        CommandExecutor(pending, zones, repository, json, scope) { testScheduler.currentTime }
     private val handle get() = SavedStateHandle(mapOf("zoneId" to "zone"))
 
     @Test fun delayedWriteDoesNotSilentlyLoseItsOptimisticValueAfterThreeMinutes() = runTest(dispatcher) {

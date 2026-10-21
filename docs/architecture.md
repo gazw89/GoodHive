@@ -10,7 +10,7 @@ aren't obvious from reading one file. It covers **runtime mechanics only**.
 - **Status-ladder / Heat on Demand feature design**:
   [`heat-on-demand-and-status-ui.md`](heat-on-demand-and-status-ui.md).
 
-Last verified against the code: 2026-10-15 (`feature/reports`, integrated Reports v1). When you change a mechanism
+Last verified against the code: 2026-10-21 (Hive write log; household outbound write gap and longer command confirmation). When you change a mechanism
 described here, update this doc in the same commit. Symbols are named rather than line-referenced, so
 search for them.
 
@@ -35,14 +35,14 @@ search for them.
 | Package | Responsibility | Key symbols |
 |---|---|---|
 | `auth/` | Cognito SRP login, SMS MFA, refresh, device remembering, encrypted storage | `AuthRepository` (only entry point), `CognitoSrpClient`, `SrpCrypto`, `TokenStore`, `CredentialStore`, `HiveAuthException.isDefiniteSessionRejection`, `TokenLifecycleLog` |
-| `data/network/` | Retrofit API and raw JSON → domain mapping | `HiveApiService` (`getAllNodes`, `setState`, `getTemperatureHistory`), `HiveHistoryResponse`, `HiveNodesResponse`/`HiveNode` (props/state kept as `JsonObject`), `toHeatingZones()`, `activityProbeLines()` |
+| `data/network/` | Retrofit API and raw JSON → domain mapping | `HiveApiService` (`getAllNodes`, `setState`, `getTemperatureHistory`), `HiveHistoryResponse`, `HiveNodesResponse`/`HiveNode` (props/state kept as `JsonObject`), `toHeatingZones()`, `activityProbeLines()`, `HiveWriteLoggingInterceptor` (Beekeeper POSTs only; `sanitizeHiveBody`) |
 | `data/model/` | Pure domain types and derivations, no Android deps | `HeatingZone`, `WeekSchedule`/`ScheduleSlot`, `HeatingMode`/`ProductType` (raw Hive strings), `householdHeating()`, `activity()`, `ZoneActivity`, `canControl`, `deviceHealth`, `TemperatureHistory.kt` (`TemperatureReading`, `HistoryResolution`, `HistoryAggregate` (AVG/MAX/MIN), `summary()`, `mergeSourceReadings()`) |
-| `data/db/` | Room DB `goodhive.db` | `AppDatabase` (v10), entities in `Entities.kt`, DAOs in `Daos.kt`, `DatabaseMigrations` |
-| `data/repository/` | Refresh policy, write payloads, command reliability, history reads | `HeatingRepository` (refresh, `setState`, top-level `build…Payload` / `expectedStateFor…` fns), `CommandExecutor`, `HiveRequestRunner` (token + one 401 refresh for every Beekeeper call), `HistoryFetcher` (the single fetch-one-window function: serialization, 404 retry, error mapping), `TemperatureHistoryRepository` (on-demand reads), `HistorySyncRepository` (Room store: backfill, top-up, `readings()`, `observeStoredStats()`, `clearStoredHistory()`), `ZoneStateLogger` (state log + schedule snapshots) |
+| `data/db/` | Room DB `goodhive.db` | `AppDatabase` (v12), entities in `Entities.kt`, DAOs in `Daos.kt`, `DatabaseMigrations` |
+| `data/repository/` | Refresh policy, write payloads, command reliability, history reads, Beekeeper write log | `HeatingRepository` (refresh, `setState`, top-level `build…Payload` / `expectedStateFor…` fns), `CommandExecutor`, `HiveRequestRunner` (token + one 401 refresh for every Beekeeper call), `HiveRequestLogRepository` (30-day `hive_request_log`), `HistoryFetcher` (the single fetch-one-window function: serialization, 404 retry, error mapping), `TemperatureHistoryRepository` (on-demand reads), `HistorySyncRepository` (Room store: backfill, top-up, `readings()`, `observeStoredStats()`, `clearStoredHistory()`), `ZoneStateLogger` (state log + schedule snapshots) |
 | `data/prefs/` | Theme mode, dynamic colour, Reports options (DataStore `goodhive_settings`) | `SettingsStore` (the DataStore, `SettingsKeys`: every stored key must be listed there or `DropUnknownSettings` deletes it on start), `ThemePreferences`, `ReportPreferences` (`coldNightThresholdC` Flow, default 16, 12-18 in 0.5 steps) |
 | `work/` | 15-min background poll and command resumption; history sync | `PollingWorker` (scheduled in `GoodHiveApplication`), `HistorySyncWorker` + `HistorySync` (enqueue/cancel; unique work `goodhive_history_sync`, `KEEP`) |
 | `di/` | Hilt singletons: `Json`, `OkHttpClient`, Retrofit, Room, DAOs | `NetworkModule`, `DataModule` |
-| `ui/` | Compose screens, each with a `@HiltViewModel` | `navigation/GoodHiveNavHost` (routes), `dashboard/`, `detail/` (design B: `ZoneHeadline`, `TargetStepper`, `TodayTemperatureCard`), `schedule/`, `login/`, `settings/` (incl. the Reports section: cold-night threshold dialog, stored history size, Sync now, Clear stored history), `components/` (incl. `chart/TemperatureChart` + pure `ChartGeometry`, reusable by reporting), `theme/` |
+| `ui/` | Compose screens, each with a `@HiltViewModel` | `navigation/GoodHiveNavHost` (routes), `dashboard/`, `detail/` (design B: `ZoneHeadline`, `TargetStepper`, `TodayTemperatureCard`), `schedule/`, `login/`, `settings/` (incl. the Reports section: cold-night threshold dialog, stored history size, Sync now, Clear stored history; Hive writes list, filters, and detail), `components/` (incl. `chart/TemperatureChart` + pure `ChartGeometry`, reusable by reporting), `theme/` |
 | `util/` | Time (Europe/London), schedule now/next and day steps, name joining | `GoodHiveTime` (`londonStartOfDay`, `minutesSinceLondonMidnight`), `scheduleNowNextLater()`, `stepsFor()`/`ScheduleStep`, `joinNames()`, `hodFiringReason()` |
 
 ## Read path: refresh and polling
@@ -159,18 +159,24 @@ uiState ◀── CommandExecutor.observeZones() ◀── Room ◀── proces
   `commandGroup()`: `heating` (mode/target/boost), `heatOnDemand` (`autoBoost`/`zone` keys), or
   `schedule`. A target tap doesn't cancel a pending HoD toggle.
 - **`process(commandId)`** runs in the executor's own `SupervisorJob` scope on IO:
-  - Commands older than `MAX_RESUME_AGE_MS` (15 min) fail as expired.
+  - Commands older than `MAX_RESUME_AGE_MS` (15 min) are not sent. One fresh poll runs first: a match
+    is `CONFIRMED` with no banner, and a mismatch fails as expired.
   - **Observe-first** for resumed commands (status past PENDING) and for every HoD command. If a fresh
     poll already matches, finish without sending. This is the no-op skip that avoids HoD 400s on
     re-enable.
-  - **Send**, with up to 5 attempts (`SEND_DELAYS_MS` 0/2/5/15/30 s), serialised per zone by
-    `sendLocks`. After any error it re-polls first, because the write may have applied. Only
-    `isRetryable()` errors are retried (408/429/5xx/IO). `Retry-After` over 120 s fails the command.
+  - **Send**, with up to 5 attempts (`SEND_DELAYS_MS` 0/5/15/30/60 s). Every `setState` goes through
+    one household gate (`outboundMutex`, `OUTBOUND_GAP_MS` = 5 s): the next write waits until 5 s
+    after the previous one **started**, and never overlaps it. A rejected POST still occupies the gap.
+    A command superseded while waiting does not start a new one. A Hive `Retry-After` of at least 5 s
+    is not added on top of the gap. After any error the executor re-polls first, because the write may
+    have applied. Only `isRetryable()` errors are retried (408/429/5xx/IO). A `400` fails immediately.
+    `Retry-After` over 120 s fails the command.
   - **BOOST resends send the minutes left**, not the original duration (`boostPayloadForSend`), so retries and
     resumed boosts never push the end time later. Once the boost time has passed, the command fails.
-  - **Confirm** by polling with `CONFIRM_DELAYS_MS` (about 100 s total), checking
+  - **Confirm** by polling with `CONFIRM_DELAYS_MS` (about 280 s), checking
     `matchesExpectedState`. It compares only the keys `target` (±0.1), `mode`, `autoBoost` (missing ≡
-    DISABLED) and `schedule` (`canonicalizeWeekSchedule`). An unknown key never matches.
+    DISABLED) and `schedule` (`canonicalizeWeekSchedule`). An unknown key never matches. These polls
+    are reads; they are not spaced by the outbound gate.
   - Timeout → `FAILED` with **no blind resend**. The user retries via `retryLatestFailed`.
 - **Outcomes** are written to `command_log`. Unresolved `FAILED` rows from the last 15 min drive the
   dashboard banner and the detail/schedule retry and dismiss affordance (`dismissFailuresForZone`).
@@ -256,11 +262,21 @@ The domain rules behind them are in hive-domain-reference §5. The non-obvious m
   - `schedule_snapshot(id, zoneId, fromMs, scheduleJson)`, indexed on `(zoneId, fromMs)`.
   - DAOs: `HistoryDao` (readings + sync, with the atomic `commitChunk`), `ZoneStateDao`.
 - **v11** (`MIGRATION_10_11`) drops every table not in the frozen `TABLES_V11` set, removing tables
-  left by retired features. `DatabaseMigrationTest` asserts the migrated database holds exactly that set.
-- **Adding v12:** bump the version, then add a new `Migration(11, 12)`, appended to `DatabaseMigrations.ALL`.
-  Don't edit the frozen v8 constants, `MIGRATION_9_10`, `MIGRATION_10_11` or `TABLES_V11`. Extend `DatabaseMigrationTest` (androidTest,
-  uses the exported schemas). There's no destructive fallback: operational data and pending commands
-  must survive upgrades.
+  left by retired features. `DatabaseMigrationTest` asserts the migrated database holds exactly
+  `CURRENT_TABLES`.
+- **v12** (`MIGRATION_11_12`, creates the table and its `startedAtEpochMillis` index) adds
+  `hive_request_log`: sanitised Beekeeper POST method, path, request body, response code, duration,
+  response body, and transport error. `HiveWriteLoggingInterceptor` records only
+  `POST beekeeper.hivehome.com` (temperature, mode, boost, schedule, Heat on Demand, including a 401
+  retry). Polls, history reads, Cognito, and SSO are not stored. Bodies pass through `sanitizeHiveBody`
+  (no Authorization, cookies, tokens, or address-like fields; 64 KB cap). Rows older than 30 days are
+  deleted on insert and when the repository is created. Sign-out clears the table with the rest of
+  the account database. Settings → Hive writes lists them, with sort and filters, and opens the
+  sanitised request and response.
+- **Adding v13:** bump the version, then add a new `Migration(12, 13)`, appended to `DatabaseMigrations.ALL`.
+  Don't edit the frozen v8 constants, `MIGRATION_9_10`, `MIGRATION_10_11`, `MIGRATION_11_12`, or `TABLES_V11`.
+  Extend `CURRENT_TABLES` and `DatabaseMigrationTest` (androidTest, uses the exported schemas). There's no
+  destructive fallback: operational data and pending commands must survive upgrades.
 - Temperature history **is** stored (user decision, for Reports; see "History reads"). It holds only
   Hive's own readings plus our state log. The old `heating_sample` table (our own sampling) stays
   dropped.
@@ -275,9 +291,9 @@ The domain rules behind them are in hive-domain-reference §5. The non-obvious m
   and Beekeeper.
 - No UI or ViewModel code calls `HiveApiService` or `HeatingRepository.setState` directly. Every
   device write goes through `CommandExecutor.enqueue`.
-- No OkHttp `BODY`/`HEADERS` logging (`NetworkModule` uses `BASIC`), because the Authorization header
-  carries a live token and bodies can carry the home address. Requests must keep the Hive-like
-  `User-Agent`.
+- Logcat stays at OkHttp `BASIC` (`NetworkModule`). Do not switch that interceptor to `BODY` or
+  `HEADERS`: the Authorization header carries a live token. Beekeeper write bodies are stored only in
+  `hive_request_log`, after sanitising. Requests must keep the Hive-like `User-Agent`.
 - No second poll loop, no automatic resend after a confirmation timeout, and no BOOST replay.
 - No history call inside a loop, and no history network traffic outside `HistorySyncWorker` or a
   visible screen's on-demand read. We store only what Hive reports; never infer or synthesize readings.
@@ -318,7 +334,7 @@ The domain rules behind them are in hive-domain-reference §5. The non-obvious m
 | Room detail layout | `DeviceDetailScreen` (controllable branch) → `ZoneHeadline` (pure copy, `ZoneHeadlineTest`) / `TargetStepper` / `TodayTemperatureCard`. The chart's x-axis is London **wall-clock** minutes, so readings line up with `stepsFor()` on DST days. |
 | A new device write | See "Adding a new write type" above. |
 | A new zone status | `ZoneActivity` + `activity()` order → `HeatingActivityTest` → `ui/components/HeatStatus.kt` and the dashboard and detail screens. |
-| Polling cadence or rate limiting | `DashboardViewModel` loop, `HeatingRepository` constants, `GoodHiveApplication` worker schedule. Keep the single loop. |
+| Polling cadence or rate limiting | `DashboardViewModel` loop, `HeatingRepository` constants, `CommandExecutor` outbound gap (`OUTBOUND_GAP_MS`), `GoodHiveApplication` worker schedule. Keep the single loop. |
 | Auth or session behaviour | `AuthRepository` only. Callers never touch `TokenStore`. |
 | Schedule editing | `ScheduleViewModel` (always writes the **full week** via `buildSchedulePayload`), `ScheduleScreen`, `ScheduleCopySheets`, `util/ScheduleNowNextLater.kt`. |
 | A new screen or route | `GoodHiveNavHost` (`Routes`), with a `@HiltViewModel` that reads `zoneId` from `SavedStateHandle`. |

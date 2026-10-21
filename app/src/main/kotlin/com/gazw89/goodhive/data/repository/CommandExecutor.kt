@@ -47,6 +47,7 @@ class CommandExecutor internal constructor(
     private val heatingRepository: HeatingRepository,
     private val json: Json,
     private val scope: CoroutineScope,
+    private val now: () -> Long = System::currentTimeMillis,
 ) {
     @Inject constructor(
         pendingCommandDao: PendingCommandDao,
@@ -57,8 +58,10 @@ class CommandExecutor internal constructor(
 
     private val inFlight = ConcurrentHashMap.newKeySet<Long>()
     private val processingJobs = ConcurrentHashMap<Long, Job>()
-    private val sendLocks = ConcurrentHashMap<String, Mutex>()
     private val enqueueMutex = Mutex()
+    /** One device write at a time, for the whole household. The thermostat restarts if several land together. */
+    private val outboundMutex = Mutex()
+    private var nextOutboundAtMillis = 0L
     private val activeStatuses = listOf(CommandStatus.PENDING, CommandStatus.SENDING, CommandStatus.CONFIRMING)
 
     /** Stop account-owned commands and hold enqueueing until the account wipe finishes. */
@@ -150,14 +153,16 @@ class CommandExecutor internal constructor(
         if (!registered) return
         try {
             val initial = reloadOrAbort(commandId) ?: return
-            if (System.currentTimeMillis() - initial.createdAtEpochMillis > MAX_RESUME_AGE_MS) {
-                finish(commandId, "Change expired before it could be confirmed — please retry")
-                return
-            }
             val payload = json.decodeFromString(JsonObject.serializer(), initial.payloadJson)
             val expected = json.decodeFromString(kotlinx.serialization.serializer<Map<String, String>>(), initial.expectedStateJson)
             if (expected.isEmpty()) {
                 finish(commandId, "This saved change has no confirmation criteria — please retry")
+                return
+            }
+            if (System.currentTimeMillis() - initial.createdAtEpochMillis > MAX_RESUME_AGE_MS) {
+                // A later visit must not replay a stale command. One read can still clear a change that already landed.
+                if (refreshAndMatches(commandId, expected, System.currentTimeMillis())) { finish(commandId); return }
+                finish(commandId, "Change expired before it could be confirmed — please retry")
                 return
             }
             var accepted = initial.status != CommandStatus.PENDING
@@ -177,11 +182,7 @@ class CommandExecutor internal constructor(
                     // A resend must not push the boost's end time later, so each attempt sends only the minutes left.
                     val sendPayload = boostPayloadForSend(payload, initial.createdAtEpochMillis, System.currentTimeMillis())
                     if (sendPayload == null) { finish(commandId, "The boost time has already passed — please retry"); return }
-                    val result = sendLocks.getOrPut(initial.zoneId) { Mutex() }.withLock {
-                        val command = reloadOrAbort(commandId) ?: return
-                        if (pendingCommandDao.advanceIfActive(commandId, CommandStatus.SENDING, command.attemptCount + 1, System.currentTimeMillis()) == 0) return
-                        catching { heatingRepository.setState(command.zoneId, command.productType, sendPayload) }
-                    }
+                    val result = sendOutbound(commandId, sendPayload) ?: return
                     observedAfter = System.currentTimeMillis()
                     if (result.isSuccess) { accepted = true; break }
                     val error = result.exceptionOrNull()!!
@@ -222,6 +223,28 @@ class CommandExecutor internal constructor(
         }
     }
 
+    /**
+     * Holds every other device write until [OUTBOUND_GAP_MS] after this one starts.
+     * Null when the command was superseded or finished while waiting — that wait does not start a new gap.
+     * A rejected POST still starts one: the thermostat may already have seen it.
+     */
+    private suspend fun sendOutbound(commandId: Long, body: JsonObject): Result<Unit>? {
+        outboundMutex.lock()
+        try {
+            val wait = nextOutboundAtMillis - now()
+            if (wait > 0) delay(wait)
+            val command = reloadOrAbort(commandId) ?: return null
+            if (pendingCommandDao.advanceIfActive(commandId, CommandStatus.SENDING, command.attemptCount + 1, System.currentTimeMillis()) == 0) {
+                return null
+            }
+            val started = now()
+            nextOutboundAtMillis = started + OUTBOUND_GAP_MS
+            return catching { heatingRepository.setState(command.zoneId, command.productType, body) }
+        } finally {
+            outboundMutex.unlock()
+        }
+    }
+
     private suspend fun refreshAndMatches(commandId: Long, expected: Map<String, String>, notBefore: Long): Boolean {
         if (catching { heatingRepository.refresh(force = true, notBeforeEpochMillis = notBefore) }.isFailure) return false
         val command = reloadOrAbort(commandId) ?: return false
@@ -242,8 +265,12 @@ class CommandExecutor internal constructor(
     }
 
     private companion object {
-        val SEND_DELAYS_MS = longArrayOf(0, 2_000, 5_000, 15_000, 30_000)
-        val CONFIRM_DELAYS_MS = longArrayOf(8_000, 10_000, 12_000, 15_000, 15_000, 20_000, 20_000)
+        const val OUTBOUND_GAP_MS = 5_000L
+        val SEND_DELAYS_MS = longArrayOf(0, 5_000, 15_000, 30_000, 60_000)
+        val CONFIRM_DELAYS_MS = longArrayOf(
+            8_000, 10_000, 12_000, 15_000, 15_000, 20_000, 20_000,
+            30_000, 30_000, 30_000, 45_000, 45_000,
+        )
         const val MAX_RESUME_AGE_MS = 15 * 60_000L
         const val MAX_RETRY_AFTER_MS = 120_000L
     }

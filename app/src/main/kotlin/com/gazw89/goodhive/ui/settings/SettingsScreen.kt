@@ -16,6 +16,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.automirrored.filled.NavigateNext
+import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -47,6 +48,7 @@ import com.gazw89.goodhive.ui.theme.GoodHiveSpacing
 fun SettingsScreen(
     onBack: () -> Unit,
     onOpenAbout: () -> Unit,
+    onOpenHiveWrites: () -> Unit,
     onSignedOut: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
@@ -101,7 +103,7 @@ fun SettingsScreen(
                     onSignedOut()
                 },
             )
-            AboutNavRow(onClick = onOpenAbout)
+            AboutNavRow(onOpenAbout = onOpenAbout, onOpenHiveWrites = onOpenHiveWrites)
         }
     }
 }
@@ -194,7 +196,7 @@ private fun AccountSection(
 }
 
 @Composable
-private fun AboutNavRow(onClick: () -> Unit) {
+private fun AboutNavRow(onOpenAbout: () -> Unit, onOpenHiveWrites: () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(GoodHiveSpacing.sm)) {
         Text(
             text = "App",
@@ -222,7 +224,31 @@ private fun AboutNavRow(onClick: () -> Unit) {
             colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.background),
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable(onClick = onClick),
+                .clickable(onClick = onOpenAbout),
+        )
+        ListItem(
+            headlineContent = { Text("Hive writes") },
+            supportingContent = {
+                Text("Changes sent to Hive, kept for 30 days")
+            },
+            leadingContent = {
+                Icon(
+                    Icons.Outlined.History,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            },
+            trailingContent = {
+                Icon(
+                    Icons.AutoMirrored.Filled.NavigateNext,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            },
+            colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.background),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onOpenHiveWrites),
         )
     }
 }

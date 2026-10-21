@@ -41,6 +41,17 @@ object DatabaseMigrations {
         "android_metadata", "room_master_table",
     )
 
+    /** On-device Beekeeper write log. Frozen DDL. */
+    val MIGRATION_11_12: Migration = object : Migration(11, 12) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("CREATE TABLE IF NOT EXISTS `hive_request_log` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `startedAtEpochMillis` INTEGER NOT NULL, `method` TEXT NOT NULL, `path` TEXT NOT NULL, `requestBody` TEXT NOT NULL, `responseCode` INTEGER, `durationMs` INTEGER NOT NULL, `responseBody` TEXT NOT NULL, `error` TEXT)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_hive_request_log_startedAtEpochMillis` ON `hive_request_log` (`startedAtEpochMillis`)")
+        }
+    }
+
+    /** Tables present after migrating to the current schema. [TABLES_V11] stays the v11 set. */
+    internal val CURRENT_TABLES = TABLES_V11 + "hive_request_log"
+
     val ALL: Array<Migration> = (1..7).map<Int, Migration> { from ->
         object : Migration(from, 8) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -68,7 +79,7 @@ object DatabaseMigrations {
                 db.execSQL("DROP TABLE IF EXISTS heating_sample")
             }
         }
-    }.toTypedArray() + MIGRATION_8_9 + MIGRATION_9_10 + MIGRATION_10_11
+    }.toTypedArray() + MIGRATION_8_9 + MIGRATION_9_10 + MIGRATION_10_11 + MIGRATION_11_12
 
     // Frozen version-8 definitions: future entity edits must not alter these migration contracts.
     private val CACHE_COLUMNS_V8 = listOf(

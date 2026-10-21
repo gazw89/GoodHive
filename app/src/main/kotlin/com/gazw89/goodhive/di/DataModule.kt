@@ -6,6 +6,7 @@ import com.gazw89.goodhive.data.db.AppDatabase
 import com.gazw89.goodhive.data.db.CommandLogDao
 import com.gazw89.goodhive.data.db.DatabaseMigrations
 import com.gazw89.goodhive.data.db.HeatingZoneCacheDao
+import com.gazw89.goodhive.data.db.HiveRequestLogDao
 import com.gazw89.goodhive.data.db.HistoryDao
 import com.gazw89.goodhive.data.db.ZoneStateDao
 import com.gazw89.goodhive.data.db.PendingCommandDao
@@ -51,6 +52,9 @@ object DataModule {
 
     @Provides
     fun provideZoneStateDao(db: AppDatabase): ZoneStateDao = db.zoneStateDao()
+
+    @Provides
+    fun provideHiveRequestLogDao(db: AppDatabase): HiveRequestLogDao = db.hiveRequestLogDao()
     @Provides
     @Singleton
     fun provideHiveApiService(okHttpClient: OkHttpClient, json: Json): HiveApiService {

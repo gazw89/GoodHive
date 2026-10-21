@@ -21,7 +21,7 @@ class DatabaseMigrationTest {
     @Test fun version5PreservesOperationalData() = migrate(5)
     @Test fun version6PreservesOperationalData() = migrate(6)
     @Test fun version7PreservesOperationalData() = migrate(7)
-    // Versions 1..7 above also exercise the full chain through 8, 9 and 10 to 11.
+    // Versions 1..7 above also exercise the full chain through 8, 9, 10, 11 and 12.
     @Test fun version8PreservesOperationalData() = migrate(8)
 
     /** The v9 snapshot is the real starting point of MIGRATION_9_10, so it gets its own fixture. */
@@ -159,6 +159,6 @@ class DatabaseMigrationTest {
         val tables = db.query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").use { cursor ->
             buildSet { while (cursor.moveToNext()) add(cursor.getString(0)) }
         }
-        assertEquals(DatabaseMigrations.TABLES_V11, tables)
+        assertEquals(DatabaseMigrations.CURRENT_TABLES, tables)
     }
 }

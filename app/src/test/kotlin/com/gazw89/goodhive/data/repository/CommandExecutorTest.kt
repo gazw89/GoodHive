@@ -15,7 +15,14 @@ import retrofit2.Response
 @OptIn(ExperimentalCoroutinesApi::class)
 class CommandExecutorTest : RepositoryTestBase() {
     private suspend fun CommandExecutor.target(value: Double) = enqueue("zone", "Room", "trvcontrol", "Set target", buildTargetPayload(value), expectedStateForTarget(value))
-    private fun executor(scope: CoroutineScope) = CommandExecutor(pending, zones, repository, json, scope)
+    /** Spacing uses the test scheduler, so a 5s gap lines up with [advanceTimeBy] instead of the wall clock. */
+    private fun TestScope.executor(scope: CoroutineScope = this) =
+        CommandExecutor(pending, zones, repository, json, scope) { testScheduler.currentTime }
+
+    private suspend fun otherZone() {
+        val cached = zones.getAll().single()
+        zones.upsertAll(listOf(cached.copy(id = "other", name = "Other")))
+    }
     private fun http(code: Int, retryAfter: String? = null): HttpException {
         val raw = okhttp3.Response.Builder().request(okhttp3.Request.Builder().url("https://example.test").build())
             .protocol(okhttp3.Protocol.HTTP_1_1).code(code).message("Test")
@@ -86,6 +93,68 @@ class CommandExecutorTest : RepositoryTestBase() {
         assertEquals(2, api.writes.size)
         advanceUntilIdle()
         assertEquals(CommandStatus.CONFIRMED, pending.getById(id)?.status)
+    }
+
+    @Test fun differentZonesShareOneOutboundGap() = runTest {
+        configureToken()
+        otherZone()
+        val executor = executor()
+        val first = executor.target(21.0)
+        val second = executor.enqueue("other", "Other", "trvcontrol", "Set target", buildTargetPayload(19.0), expectedStateForTarget(19.0))
+        runCurrent()
+        assertEquals(1, api.writes.size)
+        assertEquals(CommandStatus.CONFIRMING, pending.getById(first)?.status)
+        assertEquals(CommandStatus.PENDING, pending.getById(second)?.status)
+        advanceTimeBy(4_999); runCurrent()
+        assertEquals(1, api.writes.size)
+        advanceTimeBy(1); runCurrent()
+        assertEquals(listOf("zone" to 21.0, "other" to 19.0), api.writes.map { it.first to it.second.getValue("target").jsonPrimitive.double })
+    }
+
+    @Test fun supersededCommandWaitingForTheGapDoesNotDelayTheNextWrite() = runTest {
+        configureToken()
+        otherZone()
+        val executor = executor()
+        executor.target(21.0)
+        runCurrent()
+        val dropped = executor.enqueue("other", "Other", "trvcontrol", "Set target", buildTargetPayload(19.0), expectedStateForTarget(19.0))
+        runCurrent()
+        val kept = executor.enqueue("other", "Other", "trvcontrol", "Set target", buildTargetPayload(22.0), expectedStateForTarget(22.0))
+        runCurrent()
+        assertEquals(CommandStatus.SUPERSEDED, pending.getById(dropped)?.status)
+        assertEquals(1, api.writes.size)
+        advanceTimeBy(4_999); runCurrent()
+        assertEquals(1, api.writes.size)
+        advanceTimeBy(1); runCurrent()
+        assertEquals(listOf(21.0, 22.0), api.writes.map { it.second.getValue("target").jsonPrimitive.double })
+        assertEquals(CommandStatus.CONFIRMING, pending.getById(kept)?.status)
+    }
+
+    @Test fun confirmationKeepsWatchingPastTheOldHundredSecondWindow() = runTest {
+        configureToken()
+        api.set = { _, _ -> }
+        val id = executor().target(21.0)
+        runCurrent()
+        advanceTimeBy(100_000); runCurrent()
+        assertEquals(CommandStatus.CONFIRMING, pending.getById(id)?.status)
+        assertEquals(1, api.writes.size)
+        assertTrue(pending.logs.isEmpty())
+        api.state = JsonObject(api.state + ("target" to JsonPrimitive(21.0)))
+        advanceUntilIdle()
+        assertEquals(CommandStatus.CONFIRMED, pending.getById(id)?.status)
+        assertEquals(1, api.writes.size)
+    }
+
+    @Test fun expiredCommandConfirmsWithoutSendingWhenHiveAlreadyMatches() = runTest {
+        configureToken()
+        api.state = JsonObject(api.state + ("target" to JsonPrimitive(21.0)))
+        val id = pending.insert(savedCommand(CommandStatus.PENDING, buildTargetPayload(21.0), expectedStateForTarget(21.0))
+            .copy(createdAtEpochMillis = System.currentTimeMillis() - 16 * 60_000L))
+        executor().resumeInFlightCommands()
+        advanceUntilIdle()
+        assertEquals(CommandStatus.CONFIRMED, pending.getById(id)?.status)
+        assertEquals(0, api.writes.size)
+        assertEquals("CONFIRMED", pending.logs.single().outcome)
     }
 
     @Test fun newerCommandWaitsForOlderSendAndCannotBeOverwrittenByIt() = runTest {

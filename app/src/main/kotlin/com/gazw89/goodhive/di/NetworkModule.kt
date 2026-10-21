@@ -1,5 +1,6 @@
 package com.gazw89.goodhive.di
 
+import com.gazw89.goodhive.data.network.HiveWriteLoggingInterceptor
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -23,10 +24,10 @@ object NetworkModule {
 
     @Provides
     @Singleton
-    fun provideOkHttpClient(): OkHttpClient {
+    fun provideOkHttpClient(writeLog: HiveWriteLoggingInterceptor): OkHttpClient {
         val logging = HttpLoggingInterceptor().apply {
-            // BASIC, not BODY/HEADERS — the Authorization header carries a live session
-            // token and request bodies can carry the home address; never log those.
+            // BASIC, not BODY/HEADERS — logcat must not print the Authorization header.
+            // Beekeeper POST bodies are stored on-device by [writeLog], already sanitised.
             level = HttpLoggingInterceptor.Level.BASIC
         }
         return OkHttpClient.Builder()
@@ -43,6 +44,7 @@ object NetworkModule {
                 chain.proceed(request)
             }
             .addInterceptor(logging)
+            .addInterceptor(writeLog)
             .build()
     }
 }
