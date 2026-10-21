@@ -1,0 +1,4 @@
+<resources>
+    <!-- Mirrors Color.kt's EspressoBackground. -->
+    <color name="window_background">#FF191410</color>
+</resources>

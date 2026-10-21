@@ -1,0 +1,5 @@
+<resources>
+    <!-- Mirrors Color.kt's CreamBackground — used only for the pre-Compose window background,
+         so there is no gap where the raw platform white shows through during nav transitions. -->
+    <color name="window_background">#FFFFFBF3</color>
+</resources>

@@ -1,0 +1,11 @@
+<resources>
+    <!-- Window/splash theme only. Material 3 color, type, and shape live in Compose GoodHiveTheme.
+         Follows system DayNight via values / values-night; in-app ThemeMode may briefly mismatch
+         until Compose paints. -->
+    <style name="Theme.GoodHive" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:windowBackground">@color/window_background</item>
+    </style>
+</resources>

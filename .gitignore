@@ -1,0 +1,36 @@
+# Personal data / credentials — never committed, even to this private repo
+hive_dump.json
+*.hive_dump.json
+local.properties
+*.jks
+*.keystore
+.env
+.env.*
+
+# Android / Gradle
+*.iml
+.gradle/
+.kotlin/
+/local.properties
+/.idea/
+.DS_Store
+/build/
+*/build/
+/captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aab
+
+# Python spike scripts (personal one-off, not app code)
+spike/__pycache__/
+*.pyc
+.venv/
+
+# Local recoverable APK backups
+backups/
+.tmp/
+tmp/
+.netlify/
+node_modules/
+.claude/worktrees/

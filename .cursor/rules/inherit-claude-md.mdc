@@ -1,0 +1,10 @@
+---
+description: Inherit all project rules from CLAUDE.md (single source of truth)
+alwaysApply: true
+---
+
+# Project guidelines
+
+Follow every instruction in the repository-root `CLAUDE.md`. That file is the single source of truth for project rules — including the Material 3 / Material You UI guidelines. Do not duplicate, weaken, or diverge from it.
+
+When editing UI (Compose screens, themes, components), treat the **UI Guidelines** section in `CLAUDE.md` as mandatory and verify against current Material Design specs at https://m3.material.io.

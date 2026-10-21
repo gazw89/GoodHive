@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <application
+        android:appComponentFactory="com.gazw89.goodhive.debug.ReportsFixtureComponentFactory"
+        tools:replace="android:appComponentFactory">
+        <!-- Shell-only, separate-process UI fixtures. No production Application/polling startup. -->
+        <activity
+            android:name=".debug.ReportsFixtureActivity"
+            android:exported="true"
+            android:permission="android.permission.DUMP"
+            android:process=":reports_fixture"
+            android:label="GoodHive · Demo/test data" />
+
+        <!-- Local aggregate stats; enqueue=true delegates network work to HistorySyncWorker. -->
+        <receiver
+            android:name=".debug.ReportsSyncProbeReceiver"
+            android:exported="true"
+            android:permission="android.permission.DUMP">
+            <intent-filter>
+                <action android:name="com.gazw89.goodhive.PROBE_REPORT_SYNC" />
+            </intent-filter>
+        </receiver>
+
+        <!--
+            Debug-only Hive history API probe. Triggered from adb only: DUMP is held by the shell
+            but cannot be granted to third-party apps.
+              adb shell am broadcast -a com.gazw89.goodhive.PROBE_HISTORY -n com.gazw89.goodhive/.debug.HistoryProbeReceiver
+        -->
+        <receiver
+            android:name=".debug.HistoryProbeReceiver"
+            android:exported="true"
+            android:permission="android.permission.DUMP">
+            <intent-filter>
+                <action android:name="com.gazw89.goodhive.PROBE_HISTORY" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

@@ -1,0 +1,9 @@
+<resources>
+    <!-- Window/splash theme only (dark). Compose GoodHiveTheme owns Material 3 theming. -->
+    <style name="Theme.GoodHive" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:windowBackground">@color/window_background</item>
+    </style>
+</resources>
