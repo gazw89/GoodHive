@@ -1,0 +1,23 @@
+#!/bin/sh
+# Blocks the push if gitleaks finds possible secrets in the commits being pushed.
+
+if ! command -v gitleaks >/dev/null 2>&1; then
+  echo "pre-push: gitleaks is not installed (brew install gitleaks). Push blocked." >&2
+  exit 1
+fi
+
+remote="$1"
+zero=0000000000000000000000000000000000000000
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+  [ "$local_sha" = "$zero" ] && continue
+  if [ "$remote_sha" = "$zero" ]; then
+    range="$local_sha --not --remotes=$remote"
+  else
+    range="$remote_sha..$local_sha"
+  fi
+  if ! gitleaks git --redact --no-banner --log-opts="$range" .; then
+    echo "pre-push: gitleaks flagged $local_ref. Push blocked." >&2
+    exit 1
+  fi
+done

@@ -156,3 +156,18 @@ After completing an implementation or bug fix that produces a runnable app chang
 2. If at least one device/`device` entry is connected, install and launch with `./gradlew :app:installDebug` or `:app:installRelease` as appropriate (and start the app’s main activity if needed).
 3. Ask the user to smoke-test the change on-device, **or** drive the verification yourself with `adb` (launch app, screenshot, logcat) when that is practical.
 4. If no device is connected, say so clearly and tell the user how to retry once debugging is available — still do not treat “compiled successfully” as the end of the task when a device might be available.
+
+## Public repo & pushing
+
+This repository is **public** (`github.com/gazw89/GoodHive`). Nothing may be pushed without gitleaks
+passing on the commits being pushed.
+
+1. Before every `git push`, run gitleaks on the outgoing commits, e.g.
+ `gitleaks git --redact --log-opts="origin/main..HEAD" .`. If it reports any finding, or gitleaks is
+ not installed, do **not** push. Fix the commit, or ask the user.
+2. The tracked `.githooks/pre-push` hook enforces this. Enable it once per clone with
+ `git config core.hooksPath .githooks`. Never bypass it with `--no-verify`.
+3. Never commit personal data: home postcode or coordinates, account emails, Hive device/zone ids from
+ a real account, tokens, or `tmp/` probe scripts. Tests and docs use made-up fixtures.
+4. Old pre-public history lives in the private `archive` remote (`gazw89/GoodHive-archive`). Never push
+ `backup/pre-public-history` or any branch based on it to `origin`.
