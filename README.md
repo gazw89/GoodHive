@@ -8,6 +8,8 @@ The phone talks to Hive Cognito and Beekeeper directly — there is no GoodHive 
 I found the official Hive app unreliable, so I used AI to help me build my own. For what I use it
 for, GoodHive works much better than the official app.
 
+I called it GoodHive because it's like the Hive app, but good.
+
 Feel free to use it, fork it, or borrow from it if it's useful to you.
 
 This app is developed primarily for myself. I don't intend to support it for the public, but I
