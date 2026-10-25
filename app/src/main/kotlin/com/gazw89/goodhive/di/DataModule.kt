@@ -11,6 +11,7 @@ import com.gazw89.goodhive.data.db.HistoryDao
 import com.gazw89.goodhive.data.db.ZoneStateDao
 import com.gazw89.goodhive.data.db.PendingCommandDao
 import com.gazw89.goodhive.data.db.RoomOrderDao
+import com.gazw89.goodhive.data.db.RoutineDao
 import com.gazw89.goodhive.data.network.HiveApiService
 import dagger.Module
 import dagger.Provides
@@ -55,6 +56,10 @@ object DataModule {
 
     @Provides
     fun provideHiveRequestLogDao(db: AppDatabase): HiveRequestLogDao = db.hiveRequestLogDao()
+
+    @Provides
+    fun provideRoutineDao(db: AppDatabase): RoutineDao = db.routineDao()
+
     @Provides
     @Singleton
     fun provideHiveApiService(okHttpClient: OkHttpClient, json: Json): HiveApiService {

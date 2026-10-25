@@ -87,6 +87,12 @@ class CommandExecutor internal constructor(
         pendingCommandDao.observeById(commandId).first { it == null || it.status !in activeStatuses }
     }
 
+    /** Waits like [awaitSettled], then returns the final [CommandStatus], or null if the row is gone. */
+    suspend fun awaitOutcome(commandId: Long): String? {
+        awaitSettled(commandId)
+        return pendingCommandDao.getById(commandId)?.status
+    }
+
     suspend fun enqueue(
         zoneId: String,
         zoneName: String,
@@ -337,8 +343,15 @@ internal fun matchesExpectedState(cached: HeatingZoneCacheEntity, expected: Map<
 
 internal fun applyPendingState(zone: HeatingZone, payload: JsonObject): HeatingZone {
     val schedule = (payload["schedule"] as? JsonObject)?.toWeekSchedule()
+    val mode = payload["mode"]?.jsonPrimitive?.contentOrNull
     return zone.copy(
-        mode = payload["mode"]?.jsonPrimitive?.contentOrNull ?: zone.mode,
+        mode = mode ?: zone.mode,
+        // A pending boost shows its own length, not what is left of the boost it replaces.
+        boostMinutesLeft = when {
+            "boost" in payload -> payload["boost"]?.jsonPrimitive?.intOrNull ?: zone.boostMinutesLeft
+            mode != null && mode != "BOOST" -> null
+            else -> zone.boostMinutesLeft
+        },
         targetTemperatureC = payload["target"]?.jsonPrimitive?.doubleOrNull ?: zone.targetTemperatureC,
         heatOnDemand = when {
             "autoBoost" in payload -> payload["autoBoost"]?.jsonPrimitive?.contentOrNull

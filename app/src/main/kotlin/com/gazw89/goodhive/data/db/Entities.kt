@@ -167,3 +167,15 @@ data class HiveRequestLogEntity(
     val responseBody: String,
     val error: String?,
 )
+
+/** A user-built routine. [stepsJson] is the serialised `List<RoutineStep>`, always edited with its routine. */
+@Entity(tableName = "routine")
+data class RoutineEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val iconKey: String,
+    /** Dashboard order; lower sorts first. */
+    val position: Int,
+    val stepsJson: String,
+    val createdAtEpochMillis: Long,
+)

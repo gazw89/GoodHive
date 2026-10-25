@@ -32,4 +32,6 @@ object GoodHiveSpacing {
     val heatmapHeight = 200.dp
     /** Width of a legend swatch. */
     val legendSwatch = 20.dp
+    /** Width of a routine tile on the dashboard's Routines row. */
+    val routineTileWidth = 132.dp
 }

@@ -1,5 +1,7 @@
 package com.gazw89.goodhive.ui.navigation
 
+import com.gazw89.goodhive.ui.routines.RoutineEditorScreen
+import com.gazw89.goodhive.ui.routines.RoutineEditorViewModel
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -58,6 +60,8 @@ private object Routes {
     const val SCHEDULE = "schedule/{zoneId}"
     fun deviceDetail(zoneId: String) = "device/${Uri.encode(zoneId)}"
     fun schedule(zoneId: String) = "schedule/${Uri.encode(zoneId)}"
+    const val ROUTINE_EDIT = "routine/{${RoutineEditorViewModel.ARG_ROUTINE_ID}}"
+    fun routineEdit(id: Long?) = "routine/${id ?: RoutineEditorViewModel.NEW}"
 }
 
 /**
@@ -132,6 +136,7 @@ fun GoodHiveNavHost(
             DashboardScreen(
                 onZoneClick = { zoneId -> navController.navigate(Routes.deviceDetail(zoneId)) },
                 onOpenSettings = { navController.navigate(Routes.SETTINGS) },
+                onEditRoutine = { id -> navController.navigate(Routes.routineEdit(id)) },
                 onSessionExpired = {
                     navController.navigate(Routes.LOGIN) {
                         popUpTo(Routes.DASHBOARD) { inclusive = true }
@@ -191,6 +196,12 @@ fun GoodHiveNavHost(
                 onEditSchedule = { navController.navigate(Routes.schedule(zoneId)) },
                 onOpenZone = { otherZoneId -> navController.navigate(Routes.deviceDetail(otherZoneId)) },
             )
+        }
+        composable(
+            Routes.ROUTINE_EDIT,
+            arguments = listOf(navArgument(RoutineEditorViewModel.ARG_ROUTINE_ID) { type = NavType.StringType }),
+        ) {
+            RoutineEditorScreen(onClose = { navController.popBackStack() })
         }
         composable(
             Routes.SCHEDULE,

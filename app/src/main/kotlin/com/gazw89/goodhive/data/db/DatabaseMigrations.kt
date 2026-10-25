@@ -49,8 +49,15 @@ object DatabaseMigrations {
         }
     }
 
+    /** User-built routines. Frozen DDL. */
+    val MIGRATION_12_13: Migration = object : Migration(12, 13) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("CREATE TABLE IF NOT EXISTS `routine` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, `iconKey` TEXT NOT NULL, `position` INTEGER NOT NULL, `stepsJson` TEXT NOT NULL, `createdAtEpochMillis` INTEGER NOT NULL)")
+        }
+    }
+
     /** Tables present after migrating to the current schema. [TABLES_V11] stays the v11 set. */
-    internal val CURRENT_TABLES = TABLES_V11 + "hive_request_log"
+    internal val CURRENT_TABLES = TABLES_V11 + "hive_request_log" + "routine"
 
     val ALL: Array<Migration> = (1..7).map<Int, Migration> { from ->
         object : Migration(from, 8) {
@@ -79,7 +86,7 @@ object DatabaseMigrations {
                 db.execSQL("DROP TABLE IF EXISTS heating_sample")
             }
         }
-    }.toTypedArray() + MIGRATION_8_9 + MIGRATION_9_10 + MIGRATION_10_11 + MIGRATION_11_12
+    }.toTypedArray() + MIGRATION_8_9 + MIGRATION_9_10 + MIGRATION_10_11 + MIGRATION_11_12 + MIGRATION_12_13
 
     // Frozen version-8 definitions: future entity edits must not alter these migration contracts.
     private val CACHE_COLUMNS_V8 = listOf(

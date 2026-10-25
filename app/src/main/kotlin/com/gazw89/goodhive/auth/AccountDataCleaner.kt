@@ -1,6 +1,7 @@
 package com.gazw89.goodhive.auth
 
 import com.gazw89.goodhive.data.db.AppDatabase
+import com.gazw89.goodhive.data.prefs.RoutinePreferences
 import com.gazw89.goodhive.data.repository.CommandExecutor
 import com.gazw89.goodhive.data.repository.HeatingRepository
 import com.gazw89.goodhive.data.repository.HistorySyncRepository
@@ -20,6 +21,7 @@ class AccountDataCleaner @Inject constructor(
     private val heating: HeatingRepository,
     private val commands: CommandExecutor,
     private val temperatureHistory: TemperatureHistoryRepository,
+    private val routinePreferences: RoutinePreferences,
 ) {
     suspend fun clear() {
         historySync.cancel()
@@ -28,6 +30,8 @@ class AccountDataCleaner @Inject constructor(
             heating.clearAccountData {
                 temperatureHistory.clearCache()
                 withContext(Dispatchers.IO) { database.clearAllTables() }
+                // Routines went with the tables; the next account gets its own starter routine.
+                routinePreferences.setSeeded(false)
             }
         }
     }

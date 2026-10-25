@@ -21,7 +21,7 @@ class DatabaseMigrationTest {
     @Test fun version5PreservesOperationalData() = migrate(5)
     @Test fun version6PreservesOperationalData() = migrate(6)
     @Test fun version7PreservesOperationalData() = migrate(7)
-    // Versions 1..7 above also exercise the full chain through 8, 9, 10, 11 and 12.
+    // Versions 1..7 above also exercise the full chain through 8, 9, 10, 11, 12 and 13.
     @Test fun version8PreservesOperationalData() = migrate(8)
 
     /** The v9 snapshot is the real starting point of MIGRATION_9_10, so it gets its own fixture. */
@@ -65,6 +65,42 @@ class DatabaseMigrationTest {
             history.clearHistory()
             zoneState.clearLog()
             assertTrue(history.getAllSync().isEmpty() && zoneState.latestStatePerZone().isEmpty())
+        } finally {
+            migrated.close()
+            context.deleteDatabase(name)
+        }
+    }
+
+    /** The v12 snapshot gains the routine table; the request log and commands are kept. */
+    @Test fun version12GainsRoutinesAndKeepsOperationalData() = runBlocking {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val name = "goodhive-migration-test-12"
+        context.deleteDatabase(name)
+        val entities = JSONObject(instrumentation.context.assets.open("com.gazw89.goodhive.data.db.AppDatabase/12.json").bufferedReader().use { it.readText() })
+            .getJSONObject("database").getJSONArray("entities")
+        context.getDatabasePath(name).parentFile?.mkdirs()
+        SQLiteDatabase.openOrCreateDatabase(context.getDatabasePath(name), null).use { legacy ->
+            for (i in 0 until entities.length()) {
+                val entity = entities.getJSONObject(i)
+                legacy.execSQL(entity.getString("createSql").replace("\${TABLE_NAME}", entity.getString("tableName")))
+                val indices = entity.optJSONArray("indices") ?: continue
+                for (j in 0 until indices.length()) {
+                    legacy.execSQL(indices.getJSONObject(j).getString("createSql").replace("\${TABLE_NAME}", entity.getString("tableName")))
+                }
+            }
+            legacy.execSQL("INSERT INTO pending_command (commandId, zoneId, zoneName, productType, description, payloadJson, expectedStateJson, status, createdAtEpochMillis, attemptCount) VALUES (41, 'fixture-zone', 'Fixture room', 'trvcontrol', 'Fixture command', '{\"target\":21}', '{\"target\":\"21.0\"}', 'PENDING', 123456, 2)")
+            legacy.execSQL("INSERT INTO hive_request_log (id, startedAtEpochMillis, method, path, requestBody, responseCode, durationMs, responseBody, error) VALUES (7, 123456, 'POST', '/nodes/trvcontrol/fixture-zone', '{}', 200, 12, '{}', NULL)")
+            legacy.version = 12
+        }
+        val migrated = Room.databaseBuilder(context, AppDatabase::class.java, name).addMigrations(*DatabaseMigrations.ALL).build()
+        try {
+            migrated.openHelper.writableDatabase
+            assertEquals(CommandStatus.PENDING, migrated.pendingCommandDao().getById(41)?.status)
+            val routines = migrated.routineDao()
+            val id = routines.insert(RoutineEntity(name = "Fixture", iconKey = "bolt", position = 0, stepsJson = "[]", createdAtEpochMillis = 1))
+            assertEquals("Fixture", routines.getById(id)?.name)
+            assertOnlyCurrentTables(migrated.openHelper.writableDatabase)
         } finally {
             migrated.close()
             context.deleteDatabase(name)

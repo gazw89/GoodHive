@@ -72,6 +72,7 @@ import com.gazw89.goodhive.data.model.canControl
 import com.gazw89.goodhive.ui.components.BOOST_DEFAULT_MINUTES
 import com.gazw89.goodhive.ui.components.DeviceHealthNotice
 import com.gazw89.goodhive.ui.components.WheelPicker
+import com.gazw89.goodhive.ui.components.BoostWheels
 import com.gazw89.goodhive.ui.components.boostDurationsMinutes
 import com.gazw89.goodhive.ui.components.defaultBoostTargetC
 import com.gazw89.goodhive.ui.components.formatBoostDuration
@@ -548,38 +549,13 @@ private fun BoostSheet(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = GoodHiveSpacing.xs, bottom = GoodHiveSpacing.md),
             )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        "Temperature",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    WheelPicker(
-                        values = steps.map { "%.1f°".format(it) },
-                        selectedIndex = tempIndex,
-                        onSelectedIndexChange = { tempIndex = it },
-                        contentDescription = "Boost temperature",
-                    )
-                }
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        "Duration",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    WheelPicker(
-                        values = boostDurationsMinutes.map(::formatBoostDuration),
-                        selectedIndex = durationIndex,
-                        onSelectedIndexChange = { durationIndex = it },
-                        contentDescription = "Boost duration",
-                    )
-                }
-            }
+            BoostWheels(
+                steps = steps,
+                tempIndex = tempIndex,
+                onTempIndexChange = { tempIndex = it },
+                durationIndex = durationIndex,
+                onDurationIndexChange = { durationIndex = it },
+            )
             Spacer(Modifier.padding(top = GoodHiveSpacing.lg))
             Row(
                 modifier = Modifier.fillMaxWidth(),

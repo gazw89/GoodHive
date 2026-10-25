@@ -267,3 +267,35 @@ interface HiveRequestLogDao {
     @Query("DELETE FROM hive_request_log")
     suspend fun deleteAll()
 }
+
+@Dao
+interface RoutineDao {
+    @Query("SELECT * FROM routine ORDER BY position, id")
+    fun observeAll(): Flow<List<RoutineEntity>>
+
+    @Query("SELECT * FROM routine WHERE id = :id")
+    suspend fun getById(id: Long): RoutineEntity?
+
+    @Query("SELECT COUNT(*) FROM routine")
+    suspend fun count(): Int
+
+    @Query("SELECT COALESCE(MAX(position), -1) + 1 FROM routine")
+    suspend fun nextPosition(): Int
+
+    @Insert
+    suspend fun insert(routine: RoutineEntity): Long
+
+    @Update
+    suspend fun update(routine: RoutineEntity)
+
+    @Query("DELETE FROM routine WHERE id = :id")
+    suspend fun delete(id: Long)
+
+    @Query("UPDATE routine SET position = :position WHERE id = :id")
+    suspend fun setPosition(id: Long, position: Int)
+
+    @Transaction
+    suspend fun reorder(ids: List<Long>) {
+        ids.forEachIndexed { position, id -> setPosition(id, position) }
+    }
+}
