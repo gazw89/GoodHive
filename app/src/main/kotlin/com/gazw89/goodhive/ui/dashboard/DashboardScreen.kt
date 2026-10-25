@@ -62,6 +62,10 @@ import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -98,6 +102,8 @@ import com.gazw89.goodhive.data.model.deviceHealth
 import com.gazw89.goodhive.data.model.isWaitingForBoiler
 import com.gazw89.goodhive.data.model.roomsWaitingForBoiler
 import com.gazw89.goodhive.ui.components.StatusBadge
+import com.gazw89.goodhive.ui.routines.RoutinesRow
+import com.gazw89.goodhive.ui.routines.RoutinesViewModel
 import com.gazw89.goodhive.ui.components.estimatedBoostTotalMinutes
 import com.gazw89.goodhive.ui.components.formatBoostDuration
 import com.gazw89.goodhive.ui.components.modeIcon
@@ -126,16 +132,31 @@ import kotlin.math.roundToInt
 fun DashboardScreen(
     onZoneClick: (String) -> Unit,
     onOpenSettings: () -> Unit,
+    onEditRoutine: (Long?) -> Unit,
     onSessionExpired: () -> Unit,
     viewModel: DashboardViewModel = hiltViewModel(),
+    routinesViewModel: RoutinesViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val routinesState by routinesViewModel.uiState.collectAsStateWithLifecycle()
+    val snackbar = remember { SnackbarHostState() }
     var showReorderMenu by remember { mutableStateOf(false) }
     var showReorderSheet by rememberSaveable { mutableStateOf(false) }
     val trvs = uiState.zones.filter { it.productType == ProductType.TRV_CONTROL }
 
     LaunchedEffect(uiState.sessionExpired) {
         if (uiState.sessionExpired) onSessionExpired()
+    }
+    LaunchedEffect(routinesViewModel) {
+        routinesViewModel.messages.collect { message ->
+            val result = snackbar.showSnackbar(
+                message = message.text,
+                actionLabel = if (message.canRetry) "Retry" else null,
+                withDismissAction = message.canRetry,
+                duration = if (message.canRetry) SnackbarDuration.Long else SnackbarDuration.Short,
+            )
+            if (result == SnackbarResult.ActionPerformed) routinesViewModel.retryFailed(message.routineId)
+        }
     }
 
     Scaffold(
@@ -173,6 +194,7 @@ fun DashboardScreen(
             )
         },
         containerColor = MaterialTheme.colorScheme.background,
+        snackbarHost = { SnackbarHost(snackbar) },
     ) { innerPadding ->
         PullToRefreshBox(
             isRefreshing = uiState.isRefreshing,
@@ -198,6 +220,16 @@ fun DashboardScreen(
                             end = GoodHiveSpacing.lg,
                             top = GoodHiveSpacing.xs,
                         ),
+                    )
+                }
+                if (uiState.zones.isNotEmpty()) {
+                    RoutinesRow(
+                        uiState = routinesState,
+                        onRun = routinesViewModel::run,
+                        onEditRoutine = onEditRoutine,
+                        onReorder = routinesViewModel::reorder,
+                        onCollapsedChange = routinesViewModel::setCollapsed,
+                        modifier = Modifier.padding(top = GoodHiveSpacing.sm),
                     )
                 }
                 SyncStatusBar(

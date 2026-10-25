@@ -14,8 +14,9 @@ import androidx.room.RoomDatabase
         ZoneStateLogEntity::class,
         ScheduleSnapshotEntity::class,
         HiveRequestLogEntity::class,
+        RoutineEntity::class,
     ],
-    version = 12,
+    version = 13,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -26,4 +27,5 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun historyDao(): HistoryDao
     abstract fun zoneStateDao(): ZoneStateDao
     abstract fun hiveRequestLogDao(): HiveRequestLogDao
+    abstract fun routineDao(): RoutineDao
 }

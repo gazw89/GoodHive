@@ -36,13 +36,13 @@ search for them.
 |---|---|---|
 | `auth/` | Cognito SRP login, SMS MFA, refresh, device remembering, encrypted storage | `AuthRepository` (only entry point), `CognitoSrpClient`, `SrpCrypto`, `TokenStore`, `CredentialStore`, `HiveAuthException.isDefiniteSessionRejection`, `TokenLifecycleLog` |
 | `data/network/` | Retrofit API and raw JSON → domain mapping | `HiveApiService` (`getAllNodes`, `setState`, `getTemperatureHistory`), `HiveHistoryResponse`, `HiveNodesResponse`/`HiveNode` (props/state kept as `JsonObject`), `toHeatingZones()`, `activityProbeLines()`, `HiveWriteLoggingInterceptor` (Beekeeper POSTs only; `sanitizeHiveBody`) |
-| `data/model/` | Pure domain types and derivations, no Android deps | `HeatingZone`, `WeekSchedule`/`ScheduleSlot`, `HeatingMode`/`ProductType` (raw Hive strings), `householdHeating()`, `activity()`, `ZoneActivity`, `canControl`, `deviceHealth`, `TemperatureHistory.kt` (`TemperatureReading`, `HistoryResolution`, `HistoryAggregate` (AVG/MAX/MIN), `summary()`, `mergeSourceReadings()`) |
-| `data/db/` | Room DB `goodhive.db` | `AppDatabase` (v12), entities in `Entities.kt`, DAOs in `Daos.kt`, `DatabaseMigrations` |
-| `data/repository/` | Refresh policy, write payloads, command reliability, history reads, Beekeeper write log | `HeatingRepository` (refresh, `setState`, top-level `build…Payload` / `expectedStateFor…` fns), `CommandExecutor`, `HiveRequestRunner` (token + one 401 refresh for every Beekeeper call), `HiveRequestLogRepository` (30-day `hive_request_log`), `HistoryFetcher` (the single fetch-one-window function: serialization, 404 retry, error mapping), `TemperatureHistoryRepository` (on-demand reads), `HistorySyncRepository` (Room store: backfill, top-up, `readings()`, `observeStoredStats()`, `clearStoredHistory()`), `ZoneStateLogger` (state log + schedule snapshots) |
-| `data/prefs/` | Theme mode, dynamic colour, Reports options (DataStore `goodhive_settings`) | `SettingsStore` (the DataStore, `SettingsKeys`: every stored key must be listed there or `DropUnknownSettings` deletes it on start), `ThemePreferences`, `ReportPreferences` (`coldNightThresholdC` Flow, default 16, 12-18 in 0.5 steps) |
+| `data/model/` | Pure domain types and derivations, no Android deps | `routines/Routine.kt` (`Routine`, `RoutineStep`, `validate()`, `morningBoostRoutine()`), `HeatingZone`, `WeekSchedule`/`ScheduleSlot`, `HeatingMode`/`ProductType` (raw Hive strings), `householdHeating()`, `activity()`, `ZoneActivity`, `canControl`, `deviceHealth`, `TemperatureHistory.kt` (`TemperatureReading`, `HistoryResolution`, `HistoryAggregate` (AVG/MAX/MIN), `summary()`, `mergeSourceReadings()`) |
+| `data/db/` | Room DB `goodhive.db` | `AppDatabase` (v13), entities in `Entities.kt`, DAOs in `Daos.kt`, `DatabaseMigrations` |
+| `data/repository/` | Refresh policy, write payloads, command reliability, history reads, Beekeeper write log | `HeatingRepository` (refresh, `setState`, top-level `build…Payload` / `expectedStateFor…` fns), `CommandExecutor`, `HiveRequestRunner` (token + one 401 refresh for every Beekeeper call), `HiveRequestLogRepository` (30-day `hive_request_log`), `HistoryFetcher` (the single fetch-one-window function: serialization, 404 retry, error mapping), `TemperatureHistoryRepository` (on-demand reads), `HistorySyncRepository` (Room store: backfill, top-up, `readings()`, `observeStoredStats()`, `clearStoredHistory()`), `ZoneStateLogger` (state log + schedule snapshots), `RoutineRepository`, `RoutineRunner`, `planRoutineAction` (see "Routines") |
+| `data/prefs/` | Theme mode, dynamic colour, Reports options (DataStore `goodhive_settings`) | `SettingsStore` (the DataStore, `SettingsKeys`: every stored key must be listed there or `DropUnknownSettings` deletes it on start), `ThemePreferences`, `ReportPreferences` (`coldNightThresholdC` Flow, default 16, 12-18 in 0.5 steps), `RoutinePreferences` (starter routine already created) |
 | `work/` | 15-min background poll and command resumption; history sync | `PollingWorker` (scheduled in `GoodHiveApplication`), `HistorySyncWorker` + `HistorySync` (enqueue/cancel; unique work `goodhive_history_sync`, `KEEP`) |
 | `di/` | Hilt singletons: `Json`, `OkHttpClient`, Retrofit, Room, DAOs | `NetworkModule`, `DataModule` |
-| `ui/` | Compose screens, each with a `@HiltViewModel` | `navigation/GoodHiveNavHost` (routes), `dashboard/`, `detail/` (design B: `ZoneHeadline`, `TargetStepper`, `TodayTemperatureCard`), `schedule/`, `login/`, `settings/` (incl. the Reports section: cold-night threshold dialog, stored history size, Sync now, Clear stored history; Hive writes list, filters, and detail), `components/` (incl. `chart/TemperatureChart` + pure `ChartGeometry`, reusable by reporting), `theme/` |
+| `ui/` | Compose screens, each with a `@HiltViewModel` | `navigation/GoodHiveNavHost` (routes), `dashboard/`, `routines/` (dashboard row, editor, step sheet), `detail/` (design B: `ZoneHeadline`, `TargetStepper`, `TodayTemperatureCard`), `schedule/`, `login/`, `settings/` (incl. the Reports section: cold-night threshold dialog, stored history size, Sync now, Clear stored history; Hive writes list, filters, and detail), `components/` (incl. `chart/TemperatureChart` + pure `ChartGeometry`, reusable by reporting), `theme/` |
 | `util/` | Time (Europe/London), schedule now/next and day steps, name joining | `GoodHiveTime` (`londonStartOfDay`, `minutesSinceLondonMidnight`), `scheduleNowNextLater()`, `stepsFor()`/`ScheduleStep`, `joinNames()`, `hodFiringReason()` |
 
 ## Read path: refresh and polling
@@ -202,6 +202,34 @@ uiState ◀── CommandExecutor.observeZones() ◀── Room ◀── proces
 5. Add payload and expected-state tests (see `ModePayloadTest`, `HeatOnDemandPayloadTest`).
 6. Verify live that Hive applies it, because a `200` with the wrong body is common.
 
+## Routines
+
+A routine is a named, ordered list of steps (Boost, Set mode, Cancel boost), each applied to one or
+more rooms with values fixed when it is saved. The dashboard shows a Routines row; one tap runs one.
+The editor (`routine/{routineId}`, `new` to create) edits steps in bottom sheets, reorders them with the
+shared `ReorderSheet`, and can test-run the unsaved draft (`RoutineRunner.DRAFT_KEY`).
+
+- **Runs go through `CommandExecutor` only.** `RoutineRunner` enqueues each room's write. Retries,
+  confirmation polling, the request log and the household-wide 5 s gap (`OUTBOUND_GAP_MS`) therefore
+  apply unchanged, also between a routine's writes and manual taps elsewhere. The runner adds no timing
+  of its own. The UI never waits for the gap: pending intent shows every room's new state at once.
+- **Same room in order, rooms side by side.** Actions for one room wait for the previous to settle
+  (`awaitOutcome`), because `enqueue` supersedes an active command in the same `commandGroup`. Mode,
+  target and boost share one group, so "Set mode" then "Boost" on the thermostat would otherwise drop
+  the first. Different rooms run in parallel and simply queue for the gap.
+- **Planning is per action, just before it is sent** (`planRoutineAction`), against the displayed zones.
+  It uses the same payload builders and rules as the room screen. SCHEDULE sends the current slot's
+  target; OFF sends frost protection; Cancel boost restores `props.previous` and skips a room with no
+  user boost (including the thermostat during Heat on Demand). Missing or uncontrollable rooms are
+  skipped. A Boost step does replace a running Heat on Demand boost on the thermostat.
+- **Results:** each room ends DONE, FAILED or SKIPPED (a superseded command counts as skipped). The
+  dashboard reports a finished run once in a snackbar, with Retry for failed rooms only.
+- **Starter routine:** `RoutineRepository.seedDefaultsIfNeeded` creates "Morning boost" (thermostat
+  plus every TRV, 21° for an hour) once per account, the first time rooms load, and only when there
+  are no routines yet. Deleting it never brings it back.
+- **Known limitation:** if the process dies mid-run, actions not yet enqueued are lost. Commands
+  already enqueued resume through `resumeInFlightCommands`.
+
 ## Auth and session
 
 - **Pool discovery.** `CognitoSrpClient.discoverPoolConfig()` scrapes `https://sso.hivehome.com/` for
@@ -273,8 +301,12 @@ The domain rules behind them are in hive-domain-reference §5. The non-obvious m
   deleted on insert and when the repository is created. Sign-out clears the table with the rest of
   the account database. Settings → Hive writes lists them, with sort and filters, and opens the
   sanitised request and response.
-- **Adding v13:** bump the version, then add a new `Migration(12, 13)`, appended to `DatabaseMigrations.ALL`.
-  Don't edit the frozen v8 constants, `MIGRATION_9_10`, `MIGRATION_10_11`, `MIGRATION_11_12`, or `TABLES_V11`.
+- **v13** (`MIGRATION_12_13`, creates the table) adds `routine(id, name, iconKey, position, stepsJson,
+  createdAtEpochMillis)`. Steps are one JSON column (`RoutineStep`, discriminator `type`), always edited
+  with their routine. Sign-out clears it with the other account tables, and `AccountDataCleaner` resets
+  `RoutinePreferences` so the next account gets its own starter routine.
+- **Adding v14:** bump the version, then add a new `Migration(13, 14)`, appended to `DatabaseMigrations.ALL`.
+  Don't edit the frozen v8 constants, `MIGRATION_9_10`, `MIGRATION_10_11`, `MIGRATION_11_12`, `MIGRATION_12_13`, or `TABLES_V11`.
   Extend `CURRENT_TABLES` and `DatabaseMigrationTest` (androidTest, uses the exported schemas). There's no
   destructive fallback: operational data and pending commands must survive upgrades.
 - Temperature history **is** stored (user decision, for Reports; see "History reads"). It holds only
@@ -339,6 +371,7 @@ The domain rules behind them are in hive-domain-reference §5. The non-obvious m
 | Schedule editing | `ScheduleViewModel` (always writes the **full week** via `buildSchedulePayload`), `ScheduleScreen`, `ScheduleCopySheets`, `util/ScheduleNowNextLater.kt`. |
 | A new screen or route | `GoodHiveNavHost` (`Routes`), with a `@HiltViewModel` that reads `zoneId` from `SavedStateHandle`. |
 | Colours, type, motion | `ui/theme/` only (`Color.kt`, `TemperatureVisuals.kt` for `ColorScheme.heat…` and other extensions, `Motion.kt` for `GoodHiveMotion`/`LocalReducedMotion`). Follow the CLAUDE.md UI rules. |
+| Routines (a step type or run rule) | `RoutineStep` + `validate()` → `planRoutineAction` (payloads, skips) + `RoutineActionPlannerTest` → `RoutineStepSheet`/`stepSummary`. Runs go through `RoutineRunner` only. |
 | The HoD "Stop boost" target | `ui/detail/StopBoostTarget.kt` (`stopBoostTargetFor`), `DeviceDetailViewModel.stopHeatOnDemandBoost`. |
 
 ## Reports UI

@@ -19,8 +19,12 @@ internal object SettingsKeys {
     val THEME_MODE = stringPreferencesKey("theme_mode")
     val DYNAMIC_COLOR = booleanPreferencesKey("dynamic_color")
     val COLD_NIGHT_THRESHOLD = doublePreferencesKey("cold_night_threshold_c")
+    /** The starter "Morning boost" routine has been created for the signed-in account. */
+    val ROUTINES_SEEDED = booleanPreferencesKey("routines_seeded")
+    /** The dashboard's Routines row is hidden behind its chevron. */
+    val ROUTINES_COLLAPSED = booleanPreferencesKey("routines_collapsed")
 
-    val all: Set<Preferences.Key<*>> = setOf(THEME_MODE, DYNAMIC_COLOR, COLD_NIGHT_THRESHOLD)
+    val all: Set<Preferences.Key<*>> = setOf(THEME_MODE, DYNAMIC_COLOR, COLD_NIGHT_THRESHOLD, ROUTINES_SEEDED, ROUTINES_COLLAPSED)
 }
 
 /** Removes settings left behind by features that no longer exist. */
